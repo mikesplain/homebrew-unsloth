@@ -1,0 +1,75 @@
+name: Update Unsloth Cask
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: macos-14
+    env:
+      HOMEBREW_TAP: mikesplain/unsloth
+      HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Configure local tap
+        run: |
+          brew untap "$HOMEBREW_TAP" || true
+          brew tap "$HOMEBREW_TAP" "$GITHUB_WORKSPACE"
+
+      - name: Update cask metadata
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ruby scripts/update-cask.rb
+
+      - name: Sync generated cask to tap
+        run: cp Casks/unsloth.rb "$(brew --repo "$HOMEBREW_TAP")/Casks/unsloth.rb"
+
+      - name: Audit cask
+        run: brew audit --cask --online --except min_os,livecheck_version,livecheck_https_availability,hosting_with_livecheck,github_prerelease_version "$HOMEBREW_TAP/unsloth"
+
+      - name: Open update pull request
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet -- Casks/unsloth.rb; then
+            echo "No Unsloth cask changes."
+            exit 0
+          fi
+
+          version="$(grep -E '^  version ' Casks/unsloth.rb | cut -d '"' -f 2 | head -n 1)"
+          branch="update/unsloth"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add Casks/unsloth.rb
+          git commit -m "Update Unsloth cask to ${version}"
+          git fetch origin "$branch" 2>/dev/null || true
+          git push --force-with-lease origin "$branch"
+
+          pr_number=$(gh pr list --head "$branch" --json number --jq '.[0].number' 2>/dev/null)
+          if [[ -n "$pr_number" ]]; then
+            gh pr edit "$pr_number" \
+              --title "Update Unsloth cask to ${version}" \
+              --body "Updates the Unsloth cask to ${version} and refreshes the macOS DMG checksum."
+          else
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "Update Unsloth cask to ${version}" \
+              --body "Updates the Unsloth cask to ${version} and refreshes the macOS DMG checksum." \
+              --assignee mikesplain
+          fi
