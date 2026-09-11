@@ -3,7 +3,6 @@ cask "unsloth" do
   sha256 "6f49784d431dbb5679892f9e1964fe2fde2f1f1feffa86d8b7991a59219dd3b6"
 
   url "https://github.com/unslothai/unsloth/releases/download/v#{version}/Unsloth-Desktop-#{version.tr(".-", "__")}-MacOS.dmg"
-
   name "Unsloth"
   desc "Desktop app for running and training open models locally"
   homepage "https://github.com/unslothai/unsloth"
